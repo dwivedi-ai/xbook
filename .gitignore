@@ -1,0 +1,29 @@
+# Secrets — auth_token is equivalent to a logged-in session, never commit
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Tool outputs (committable if user wants, but defaulted off)
+bookmarks.json
+bookmarks_*.json
+
+# Spike diagnostic output (contains your real tweets)
+spike_raw_response.json
+
+# Internal docs (ADRs, hypothesis-critique) — kept locally, not shipped
+docs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
