@@ -13,7 +13,7 @@ import sys
 import time
 
 from .cookies import load as load_cookies, setup_wizard
-from .errors import BrowserNotInstalled, ExpiredCookies, MissingCookies, RateLimited, ResponseShapeChanged
+from .errors import BrowserDepsMissing, BrowserNotInstalled, ExpiredCookies, MissingCookies, RateLimited, ResponseShapeChanged
 from .fetcher import fetch_bookmarks
 from .state import (
     DEFAULT_COOLDOWN_SECONDS,
@@ -48,6 +48,8 @@ def parse_args() -> argparse.Namespace:
                    help="print current state and log paths, then exit")
     p.add_argument("--install-browsers", action="store_true",
                    help="download Chromium for Playwright (one-time, ~150MB), then exit")
+    p.add_argument("--install-deps", action="store_true",
+                   help="install Chromium's system library dependencies (Linux only, requires sudo), then exit")
     p.add_argument("--setup", action="store_true",
                    help="run the cookie setup wizard (Firefox or manual), then exit")
     return p.parse_args()
@@ -67,6 +69,30 @@ def _install_browsers() -> int:
     import subprocess
     print("downloading Chromium for Playwright (~150MB)...")
     return subprocess.call([sys.executable, "-m", "playwright", "install", "chromium"])
+
+
+def _install_deps() -> int:
+    """Install Chromium's system library dependencies via `playwright install-deps`.
+
+    Linux-only. On macOS/Windows, Playwright's Chromium is self-contained — this is a no-op
+    with an informational message. Requires sudo on Linux; we re-invoke through `sudo`
+    so the user gets a password prompt rather than a cryptic permission error.
+    """
+    import shutil
+    import subprocess
+
+    if sys.platform != "linux":
+        print(f"--install-deps is Linux-only; nothing to do on {sys.platform}.")
+        print("On macOS and Windows, Chromium ships with the libraries it needs.")
+        return 0
+
+    cmd = [sys.executable, "-m", "playwright", "install-deps", "chromium"]
+    if shutil.which("sudo") and __import__("os").geteuid() != 0:
+        cmd = ["sudo", *cmd]
+        print("installing Chromium system dependencies (sudo required)...")
+    else:
+        print("installing Chromium system dependencies...")
+    return subprocess.call(cmd)
 
 
 def _run_setup() -> int:
@@ -150,6 +176,8 @@ async def run(args: argparse.Namespace) -> int:
         )
     except BrowserNotInstalled as e:
         outcome, error = "browser_not_installed", e
+    except BrowserDepsMissing as e:
+        outcome, error = "browser_deps_missing", e
     except ExpiredCookies as e:
         outcome, error = "expired_cookies", e
     except RateLimited as e:
@@ -188,6 +216,7 @@ async def run(args: argparse.Namespace) -> int:
             "rate_limited": 4,
             "shape_changed": 5,
             "browser_not_installed": 7,
+            "browser_deps_missing": 8,
         }.get(outcome, 1)
 
     if not bookmarks:
@@ -215,6 +244,8 @@ def main() -> int:
         return _print_state_paths_and_exit()
     if args.install_browsers:
         return _install_browsers()
+    if args.install_deps:
+        return _install_deps()
     if args.setup:
         return _run_setup()
     return asyncio.run(run(args))

@@ -20,3 +20,7 @@ class ResponseShapeChanged(XbookError):
 
 class BrowserNotInstalled(XbookError):
     """The Playwright Chromium binary is not installed yet."""
+
+
+class BrowserDepsMissing(XbookError):
+    """The Chromium binary exists, but required system shared libraries are missing (Linux)."""

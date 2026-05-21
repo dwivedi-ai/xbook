@@ -5,7 +5,7 @@ from typing import Callable
 
 from playwright.async_api import Response, async_playwright
 
-from .errors import BrowserNotInstalled, ExpiredCookies, RateLimited, ResponseShapeChanged
+from .errors import BrowserDepsMissing, BrowserNotInstalled, ExpiredCookies, RateLimited, ResponseShapeChanged
 from .normalize import extract_cursor, normalize_entry
 from .state import parse_rate_limit_headers
 
@@ -59,6 +59,11 @@ async def fetch_bookmarks(
                 raise BrowserNotInstalled(
                     "Chromium for Playwright is not installed yet. "
                     "Run: xbook --install-browsers   (or: playwright install chromium)"
+                )
+            if "error while loading shared libraries" in msg or "cannot open shared object file" in msg:
+                raise BrowserDepsMissing(
+                    "Chromium is installed but required system libraries are missing. "
+                    "Run: xbook --install-deps   (Linux only; requires sudo)"
                 )
             raise
         context = await browser.new_context(

@@ -25,6 +25,7 @@ Install xbook as a system-wide tool so the `xbook` command is on your PATH from 
 ```bash
 uv tool install git+https://github.com/dwivedi-ai/xbook
 xbook --install-browsers     # one-time, downloads ~150MB Chromium
+xbook --install-deps         # Linux only: installs Chromium's system libs (needs sudo)
 xbook                        # first run launches the cookie setup wizard
 ```
 
@@ -32,6 +33,7 @@ Or run it without installing at all:
 
 ```bash
 uvx --from git+https://github.com/dwivedi-ai/xbook xbook --install-browsers
+uvx --from git+https://github.com/dwivedi-ai/xbook xbook --install-deps   # Linux only
 uvx --from git+https://github.com/dwivedi-ai/xbook xbook
 ```
 
@@ -43,6 +45,7 @@ cd xbook
 uv venv
 uv pip install -e .
 uv run playwright install chromium
+uv run xbook --install-deps  # Linux only
 uv run xbook                 # or: .venv/bin/xbook
 ```
 
@@ -54,8 +57,16 @@ cd xbook
 python -m venv .venv
 .venv/bin/pip install -e .
 .venv/bin/xbook --install-browsers    # ~150MB, one-time
+.venv/bin/xbook --install-deps        # Linux only
 .venv/bin/xbook
 ```
+
+> **Why `--install-deps`?** Chromium needs a handful of system shared libraries
+> (`libnspr4`, `libnss3`, `libasound2`, etc.) that aren't shipped with the
+> browser binary. On macOS and Windows these are present by default, so the
+> command is a no-op. On Linux — especially minimal server/container images —
+> they're often missing, and you'll see errors like `error while loading shared
+> libraries: libnspr4.so`. Run `xbook --install-deps` once and you're set.
 
 ## First-time setup
 
@@ -126,6 +137,9 @@ xbook --show-state
 
 # Re-download the Chromium binary (e.g. after upgrading playwright)
 xbook --install-browsers
+
+# Install Chromium's system library dependencies (Linux only, requires sudo)
+xbook --install-deps
 ```
 
 ### Output schema
@@ -181,6 +195,9 @@ Your session expired or the cookies are invalid. Open x.com, log in again, re-co
 
 **`ERROR: X returned HTTP 429`**
 You've hit X's rate limit. Wait for the reset time (visible in `--show-state` under `last_rate_limit_reset_at`) before retrying.
+
+**`ERROR (browser_deps_missing): Chromium is installed but required system libraries are missing`**
+You're on Linux and Chromium can't find libraries like `libnspr4.so` or `libnss3.so`. Run `xbook --install-deps` (it wraps `playwright install-deps chromium` and will prompt for sudo). This is a one-time step.
 
 **`ERROR: could not find data.bookmark_timeline_v2...`**
 X changed the response shape. Re-run `spike.py` to capture a fresh response, then file an issue with `spike_raw_response.json` attached (be sure to strip any sensitive content first).
