@@ -27,16 +27,19 @@ from .state import (
     state_path,
 )
 
+MAX_COUNT = 100
+
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         prog="xbook",
         description="Export your latest X bookmarks to JSON. Read-only by design.",
     )
-    p.add_argument("-n", "--count", type=int, default=20,
-                   help="number of bookmarks to fetch (default: 20)")
+    p.add_argument("-n", "--count", type=int, default=5,
+                   help=f"number of bookmarks to fetch (default: 5, max: {MAX_COUNT}); "
+                        "if fewer exist, xbook returns what's available")
     p.add_argument("-o", "--output", default="bookmarks.json",
-                   help="output file path (default: bookmarks.json)")
+                   help="output file path (default: bookmarks.json); use '-' for stdout")
     p.add_argument("--cookies", choices=("env", "firefox"), default="env",
                    help="cookie source: 'env' reads X_AUTH_TOKEN/X_CT0 from .env (default); "
                         "'firefox' reads from your Firefox profile's cookies.sqlite")
@@ -44,8 +47,12 @@ def parse_args() -> argparse.Namespace:
                    help=f"minimum seconds between fetches (default: {DEFAULT_COOLDOWN_SECONDS})")
     p.add_argument("--force", action="store_true",
                    help="bypass the cooldown check (still logged)")
+    p.add_argument("--show", action="store_true",
+                   help="print the saved bookmarks JSON to stdout (reads from --output path), then exit")
     p.add_argument("--show-state", action="store_true",
                    help="print current state and log paths, then exit")
+    p.add_argument("--update", action="store_true",
+                   help="upgrade xbook from GitHub via pip, then exit")
     p.add_argument("--install-browsers", action="store_true",
                    help="download Chromium for Playwright (one-time, ~150MB), then exit")
     p.add_argument("--install-deps", action="store_true",
@@ -62,6 +69,36 @@ def _print_state_paths_and_exit() -> int:
     print("current state:")
     print(json.dumps(state, indent=2))
     return 0
+
+
+def _show_bookmarks(output_path: str) -> int:
+    """Print the saved bookmarks JSON to stdout. Reads from --output path."""
+    import os
+
+    if output_path == "-":
+        print("ERROR: --show needs a file path, not stdout. Pass -o <path> or omit it.",
+              file=sys.stderr)
+        return 2
+    if not os.path.exists(output_path):
+        print(f"ERROR: no bookmarks file at {output_path}. Run `xbook` first.",
+              file=sys.stderr)
+        return 2
+    with open(output_path, "r", encoding="utf-8") as f:
+        data = f.read()
+    sys.stdout.write(data)
+    if not data.endswith("\n"):
+        sys.stdout.write("\n")
+    return 0
+
+
+def _self_update() -> int:
+    """Upgrade xbook in place from GitHub using the current Python interpreter."""
+    import subprocess
+    url = "git+https://github.com/dwivedi-ai/xbook.git"
+    print(f"upgrading xbook from {url} ...")
+    return subprocess.call([
+        sys.executable, "-m", "pip", "install", "--upgrade", url,
+    ])
 
 
 def _install_browsers() -> int:
@@ -128,6 +165,11 @@ def _build_log_entry(args, outcome, duration, bookmarks, skipped, rate_limit_inf
 
 
 async def run(args: argparse.Namespace) -> int:
+    # When writing JSON to stdout, route all human-readable output to stderr
+    # so the user can pipe `xbook -o -` into jq / agents without contamination.
+    to_stdout = args.output == "-"
+    info = sys.stderr if to_stdout else sys.stdout
+
     state = load_state()
 
     if state.get("consecutive_failures", 0) >= 3:
@@ -158,10 +200,10 @@ async def run(args: argparse.Namespace) -> int:
         save_state(state)
         return 2
 
-    print(f"fetching up to {args.count} bookmarks (source: {args.cookies})...")
+    print(f"fetching up to {args.count} bookmarks (source: {args.cookies})...", file=info)
 
     def progress(n: int) -> None:
-        print(f"  collected {min(n, args.count)}/{args.count}", end="\r", flush=True)
+        print(f"  collected {min(n, args.count)}/{args.count}", end="\r", flush=True, file=info)
 
     start = time.monotonic()
     outcome = "ok"
@@ -188,7 +230,7 @@ async def run(args: argparse.Namespace) -> int:
         outcome, error = "unknown_error", e
 
     duration = time.monotonic() - start
-    print()
+    print(file=info)
 
     # Always update state + log, success or failure.
     if outcome == "ok":
@@ -220,34 +262,50 @@ async def run(args: argparse.Namespace) -> int:
         }.get(outcome, 1)
 
     if not bookmarks:
-        print("no bookmarks found.")
+        print("no bookmarks found.", file=info)
+        if to_stdout:
+            print("[]")
         return 0
 
     if len(bookmarks) < args.count:
-        print(f"note: only {len(bookmarks)} bookmark(s) available; requested {args.count}.")
+        print(f"note: only {len(bookmarks)} bookmark(s) available; requested {args.count}.", file=info)
     if skipped:
-        print(f"note: skipped {skipped} unavailable bookmark(s) (deleted/protected).")
+        print(f"note: skipped {skipped} unavailable bookmark(s) (deleted/protected).", file=info)
 
     warning = rate_limit_warning(rate_limit_info)
     if warning:
         print(f"WARNING: {warning}", file=sys.stderr)
 
-    with open(args.output, "w", encoding="utf-8") as f:
-        json.dump(bookmarks, f, indent=2, ensure_ascii=False)
-    print(f"wrote {len(bookmarks)} bookmark(s) to {args.output} (took {duration:.1f}s)")
+    if to_stdout:
+        json.dump(bookmarks, sys.stdout, indent=2, ensure_ascii=False)
+        sys.stdout.write("\n")
+        print(f"wrote {len(bookmarks)} bookmark(s) to stdout (took {duration:.1f}s)", file=info)
+    else:
+        with open(args.output, "w", encoding="utf-8") as f:
+            json.dump(bookmarks, f, indent=2, ensure_ascii=False)
+        print(f"wrote {len(bookmarks)} bookmark(s) to {args.output} (took {duration:.1f}s)", file=info)
     return 0
 
 
 def main() -> int:
     args = parse_args()
+    if args.show:
+        return _show_bookmarks(args.output)
     if args.show_state:
         return _print_state_paths_and_exit()
+    if args.update:
+        return _self_update()
     if args.install_browsers:
         return _install_browsers()
     if args.install_deps:
         return _install_deps()
     if args.setup:
         return _run_setup()
+    if args.count < 1 or args.count > MAX_COUNT:
+        print(f"ERROR: --count must be between 1 and {MAX_COUNT} (got {args.count}). "
+              "If you want everything available, use the max; xbook returns whatever "
+              "exists up to that ceiling.", file=sys.stderr)
+        return 2
     return asyncio.run(run(args))
 
 

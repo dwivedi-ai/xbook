@@ -6,7 +6,7 @@ xbook drives a headless Chromium via Playwright using your existing session cook
 
 ## Features
 
-- Latest *N* bookmarks → `bookmarks.json` (tweet_id, author, full text, timestamp, source URL, media URLs)
+- Latest *N* bookmarks → `bookmarks.json` (or stdout) (tweet_id, author, full text, timestamp, source URL, media URLs)
 - Long-form (note_tweet) bookmarks expanded in full
 - Media URLs included (best-quality MP4 for videos, full-res image URLs)
 - Built-in **30s cooldown** between fetches (override with `--force`)
@@ -120,11 +120,17 @@ This bypasses the `.env` lookup and reads directly from Firefox each time.
 Once installed, invoke as `xbook` (uv/pip install) or `python -m xbook` (from a clone):
 
 ```bash
-# Latest 20 bookmarks → bookmarks.json
+# Latest 5 bookmarks → bookmarks.json
 xbook
 
 # Latest 50 → a different file
 xbook --count 50 --output recent.json
+
+# Pipe JSON straight to another tool (info/progress goes to stderr)
+xbook -o - | jq '.[].source_url'
+
+# Print the last saved bookmarks.json to stdout
+xbook --show
 
 # Use Firefox cookies instead of .env
 xbook --cookies firefox
@@ -134,6 +140,9 @@ xbook --force
 
 # Inspect state without fetching
 xbook --show-state
+
+# Upgrade xbook in place from GitHub
+xbook --update
 
 # Re-download the Chromium binary (e.g. after upgrading playwright)
 xbook --install-browsers

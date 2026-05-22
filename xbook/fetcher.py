@@ -106,6 +106,7 @@ async def fetch_bookmarks(
             )
 
         last_cursor: str | None = None
+        empty_payloads_in_a_row = 0
         scrolls = 0
 
         while len(collected) < count and scrolls < max_scrolls:
@@ -142,9 +143,15 @@ async def fetch_bookmarks(
             if len(collected) >= count:
                 break
 
-            # If we got no new tweets AND cursor didn't advance, we're at the end.
-            if new_count == 0 and cursor == last_cursor:
-                break
+            # End-of-feed detection. X sometimes keeps returning fresh cursors on empty
+            # pages, so we can't rely solely on cursor-stickiness. Two empty payloads in
+            # a row is a strong signal the feed is exhausted; bail with what we have.
+            if new_count == 0:
+                empty_payloads_in_a_row += 1
+                if empty_payloads_in_a_row >= 2 or cursor == last_cursor:
+                    break
+            else:
+                empty_payloads_in_a_row = 0
             last_cursor = cursor
 
             # Scroll to trigger the next page.

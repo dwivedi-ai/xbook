@@ -21,15 +21,20 @@ You are operating xbook, a local CLI that exports the user's X (Twitter) bookmar
 The tool is on PATH as `xbook` (after `uv tool install` or `pip install`). From a clone, use `python -m xbook` or `python main.py`.
 
 ```bash
-xbook                            # default: 20 bookmarks -> bookmarks.json
+xbook                            # default: 5 bookmarks -> bookmarks.json
 xbook -n 50 -o recent.json       # 50 bookmarks to custom file
+xbook -o -                       # write JSON to stdout (info goes to stderr) — agent-friendly
+xbook --show                     # print the saved bookmarks.json to stdout, no fetch
 xbook --cookies firefox          # read auth from Firefox profile (no save)
 xbook --setup                    # run the interactive cookie setup wizard
 xbook --show-state               # print state file path + current state
+xbook --update                   # upgrade xbook in place from GitHub
 xbook --install-browsers         # one-time, downloads Chromium
 xbook --force                    # bypass cooldown (use sparingly)
 xbook --cooldown 60              # use a larger cooldown for this run
 ```
+
+**`-n` / `--count` is capped at 100.** Passing a larger value errors out — the cap protects rate-limit headroom. If the user has fewer bookmarks than `--count`, xbook returns whatever is available (does not hang or pad); the CLI prints `note: only N bookmark(s) available; requested M`.
 
 Cookie discovery order (when `--cookies env` / default):
 1. process env vars `X_AUTH_TOKEN` + `X_CT0`
@@ -85,6 +90,8 @@ The CLI exits with these codes and matching `outcome` strings in `~/.local/state
 | `shape_changed`      | 5    | X likely changed the response shape. Tell the user to run `spike.py` and file an issue; suggest they share `spike_raw_response.json` (sanitized). |
 | `refused_cooldown`   | 6    | Wait the indicated seconds. Do not auto-pass `--force`. Confirm with user.   |
 | `browser_not_installed` | 7 | Run `xbook --install-browsers` once. Then retry the original command.        |
+| `browser_deps_missing` | 8  | Run `xbook --install-deps` (Linux only, sudo required). Then retry.          |
+| (invalid args)       | 2    | `--count` is out of range (1..100) or `--show` couldn't find the saved JSON. Adjust args; don't retry blindly. |
 | `unknown_error`      | 1    | Report the error message verbatim to the user. Don't retry without investigation. |
 
 ## Common workflows
@@ -106,7 +113,15 @@ Do NOT recommend running xbook in a tight loop. Recommend either:
 
 ### "Why did my export only get N bookmarks when I asked for M?"
 
-The user likely has fewer than M bookmarks total. The CLI prints `note: only N bookmark(s) available; requested M` in that case. Confirm by checking the JSON length.
+The user likely has fewer than M bookmarks total. The CLI prints `note: only N bookmark(s) available; requested M` in that case. Confirm by checking the JSON length. This is expected behavior — xbook detects end-of-feed and returns what exists rather than hanging.
+
+### "I want to pipe the bookmarks into another tool"
+
+Use `xbook -o -` to write JSON to stdout. Informational output (progress, notes, the `wrote N bookmark(s)` line) is routed to stderr in this mode, so `xbook -o - | jq ...` or `xbook -o - > file.json` is clean. For reading the *previously saved* file without fetching, use `xbook --show`.
+
+### "Update xbook"
+
+Run `xbook --update` — it upgrades from GitHub via pip against the current interpreter. Safe to run; no fetch happens, no cookies needed. After updating, the user may also want to re-run `xbook --install-browsers` if the playwright dependency bumped.
 
 ### "It says my cookies expired"
 
